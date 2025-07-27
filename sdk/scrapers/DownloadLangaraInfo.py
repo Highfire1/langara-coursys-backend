@@ -43,27 +43,31 @@ def getSubjectsFromWeb(year:int, semester:int, use_cache=False) -> list | None:
 def fetchTermFromWeb(year:int, term:int, use_cache=False, subjects_override:list[str] = None, ) -> tuple[str, str, str] | None:
     logger.info(f"{year}{term} : Downloading data.")
     
-    if subjects_override == None:
-        subjects = getSubjectsFromWeb(year, term, use_cache)
+    # if subjects_override == None:
+    #     subjects = getSubjectsFromWeb(year, term, use_cache)
         
-        if subjects == None:
-            if use_cache:
-                logger.info(f"{year}{term} : No subjects found.")
-            else:
-                logger.info(f"{year}{term} : No subjects found (note that this request was made to the cache.).")
-            return None
+    #     if subjects == None:
+    #         if use_cache:
+    #             logger.info(f"{year}{term} : No subjects found.")
+    #         else:
+    #             logger.info(f"{year}{term} : No subjects found (note that this request was made to the cache.).")
+    #         return None
         
-    subjects_data = ""
-    for s in subjects:
-        subjects_data += f"&sel_subj={s}"
-        
+    # subjects_data = ""
+    # for s in subjects:
+            
     session = createSession("database/cache/cache.db", use_cache)
     
     url = "https://swing.langara.bc.ca/prod/hzgkfcls.P_GetCrse"
     headers = {'Content-type': 'application/x-www-form-urlencoded'}
     
-    data = f"term_in={year}{term}&sel_subj=dummy&sel_day=dummy&sel_schd=dummy&sel_insm=dummy&sel_camp=dummy&sel_levl=dummy&sel_sess=dummy&sel_instr=dummy&sel_ptrm=dummy&sel_attr=dummy&sel_dept=dummy{subjects_data}&sel_crse=&sel_title=%25&sel_dept=%25&begin_hh=0&begin_mi=0&begin_ap=a&end_hh=0&end_mi=0&end_ap=a&sel_incl_restr=Y&sel_incl_preq=Y&SUB_BTN=Get+Courses"
+    data = f"term_in={year}{term}&sel_subj=dummy&sel_day=dummy&sel_schd=dummy&sel_insm=dummy&sel_camp=dummy&sel_levl=dummy&sel_sess=dummy&sel_instr=dummy&sel_ptrm=dummy&sel_attr=dummy&sel_dept=dummy&sel_crse=&sel_title=%25&sel_dept=%25&begin_hh=0&begin_mi=0&begin_ap=a&end_hh=0&end_mi=0&end_ap=a&sel_incl_restr=Y&sel_incl_preq=Y&SUB_BTN=Get+Courses"
     sections = session.post(url, headers=headers, data=data)
+    
+    if ("No courses were found" in sections.text):
+        logging.info(f"Tried to download sections for {year} {term}, but no sections were found.")
+        return None
+
     
     url = f"https://swing.langara.bc.ca/prod/hzgkcald.P_DisplayCatalog?term_in={year}{term}"
     catalogue = session.post(url)

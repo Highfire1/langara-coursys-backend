@@ -165,12 +165,13 @@ class Controller():
         timepoint1 = time.time()
         logger.info(f"Transfer information downloaded and parsed in {Controller.timeDeltaString(start, timepoint1)}")    
         
+        # THIS NO LONGER WORKS DUE TO LANGARA WEBSITE CHANGE
         # DPS course pages from the main langara website
         # Takes ?? from live and about a minute from cache.
-        logger.info("=== FETCHING COURSE PAGES INFORMATION ===")
-        self.fetchParseSaveCoursePages(use_cache)
-        timepoint2 = time.time()
-        logger.info(f"Langara course page information downloaded and parsed in {Controller.timeDeltaString(timepoint1, timepoint2)}")
+        # logger.info("=== FETCHING COURSE PAGES INFORMATION ===")
+        # self.fetchParseSaveCoursePages(use_cache)
+        # timepoint2 = time.time()
+        # logger.info(f"Langara course page information downloaded and parsed in {Controller.timeDeltaString(timepoint1, timepoint2)}")
 
         
         # Download, parse and save Langara Tnformation
@@ -185,7 +186,7 @@ class Controller():
             year, term = Controller.incrementTerm(year, term)
             
         timepoint3 = time.time()
-        logger.info(f"Langara sections downloaded and parsed in {Controller.timeDeltaString(timepoint2, timepoint3)}")
+        logger.info(f"Langara sections downloaded and parsed in {Controller.timeDeltaString(timepoint1, timepoint3)}")
         
         # Takes approximately 3 minutes
         logger.info("=== GENERATING AGGREGATIONS & PREBUILTS ===")
@@ -263,13 +264,13 @@ class Controller():
         # ugly conditional because parsing is broken for courses before 2012
         warehouse.courseSummaries = parseCatalogueHTML(catalogueHTML, year, term)
         if warehouse.courseSummaries != None:
-            logger.info(f"{year}{term} : {len(warehouse.courseSummaries)} unique courses found.")
+            logger.info(f"{year}{term} : {len(warehouse.courseSummaries)} unique courses found in catalogue.")
         else:
             logger.info(f"{year}{term} : Catalogue parsing failed.")
             warehouse.courseSummaries = []
         
         warehouse.attributes = parseAttributesHTML(attributesHTML, year, term)
-        logger.info(f"{year}{term} : {len(warehouse.attributes)} unique courses with attributes found.")
+        logger.info(f"{year}{term} : {len(warehouse.attributes)} courses with attributes.")
         
         
         # logger.info(f"{year}{term} : Beginning DB update.")
@@ -300,7 +301,7 @@ class Controller():
                     term=term
                 )
                 session.add(s)
-                logger.info(f"Creating entry for new semester {year} {term}")
+                logger.debug(f"Creating entry for new semester {year} {term}")
                 
             # TODO: move changes watcher to its own service
             

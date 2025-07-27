@@ -57,38 +57,29 @@ if __name__ == "__main__":
     if not os.path.exists("database/"):
         os.mkdir("database")
         
-    if not os.path.exists("database/cache"):
-        os.mkdir("database/cache")
+    # if not os.path.exists("database/cache"):
+    #     os.mkdir("database/cache")
 
     if not os.path.exists(PREBUILTS_DIRECTORY):
         os.mkdir(PREBUILTS_DIRECTORY)
 
-    if not os.path.exists(ARCHIVES_DIRECTORY):
-        os.mkdir(ARCHIVES_DIRECTORY)
+    # if not os.path.exists(ARCHIVES_DIRECTORY):
+    #     os.mkdir(ARCHIVES_DIRECTORY)
 
+    db_exists = os.path.exists(DB_LOCATION)
 
+    controller = Controller()
+    controller.create_db_and_tables()
 
-    if (os.path.exists(DB_LOCATION)):
+    if db_exists:
         logger.info("Database found.")
-        controller = Controller()
-        controller.create_db_and_tables()
-        # controller.checkIfNextSemesterExistsAndUpdate()
-        hourly(use_cache=True)
-        daily(use_cache=True)
-        controller.setMetadata("last_updated")
     else:
         logger.info("Database not found. Building database from scratch.")
-        # save results to cache if cache doesn't exist
-        controller = Controller()
-        controller.create_db_and_tables()
         controller.buildDatabase(use_cache=False)
         controller.setMetadata("last_updated")
-    
-    logger.info("Finished intialization.")
-    
-    # hourly()
-    # daily()
-     
+
+    logger.info("Initialization complete.")
+
     while True:
         run_pending()
         time.sleep(1)

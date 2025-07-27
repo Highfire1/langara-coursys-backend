@@ -89,7 +89,7 @@ def getSubjectList(session: Session | CachedSession, use_cache:bool, institution
 
 def getSubject(subject:TransferSubject, session: Session | CachedSession, use_cache:bool, wp_nonce:str, institution:str="LANG", institution_id:int=15) -> list[TransferDB]:
     
-    logger.info(f"{institution} {subject.subject} : Getting transfers.")
+    logger.debug(f"{institution} {subject.subject} : Getting transfers.")
         
     pages = []
     
@@ -97,25 +97,23 @@ def getSubject(subject:TransferSubject, session: Session | CachedSession, use_ca
     page = parsePageRequest(data)
     
     pages = [page]
-    
-    logger.info(f"{institution} {subject.subject} : {page.total_agreements} transfer agreements available ({page.total_pages} pages).")
-    
+    logger.debug(f"{institution} {subject.subject.ljust(8)} : {page.total_agreements} transfer agreements available ({page.total_pages} pages).")  
     if page.total_pages > 1:
         for page_num in range(2, page.total_pages+1): # pages start at 1, not 0          
             data = _getSubjectPage(subject, page_num, session, use_cache, wp_nonce, institution, institution_id)
             page = parsePageRequest(data, page.current_subject, page.current_course_code, page.current_i)
             pages.append(page)
             
-            if page.current_page % 10 == 0:
-                logger.info(f"{institution} {subject.subject} : Downloaded {page.current_page}/{page.total_pages} transfer pages.")
+            # if page.current_page % 20 == 0:
+            #     logger.info(f"{institution} {subject.subject.ljust(8)} : Downloaded {page.current_page}/{page.total_pages} transfer pages.")
     
     # generate output
     transfers:list[TransferDB] = []
     for p in pages:
         transfers.extend(p.transfers)
-    
-    logger.info(f"{institution} {subject.subject} : {len(transfers)} transfer agreements found.")    
-    
+
+    logger.info(f"{institution} {subject.subject.ljust(8)} : {str(len(transfers)).rjust(4)} transfer agreements found.")
+
     # logger.info(transfers)
     return transfers
 

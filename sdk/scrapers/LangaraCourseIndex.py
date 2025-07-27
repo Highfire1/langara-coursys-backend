@@ -1,3 +1,9 @@
+'''
+THIS CODE IS NO LONGER FUNCTIONAL.
+
+'''
+
+
 import requests
 from bs4 import BeautifulSoup
 import lxml
