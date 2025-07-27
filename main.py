@@ -73,6 +73,7 @@ if __name__ == "__main__":
 
     if db_exists:
         logger.info("Database found.")
+        hourly()
     else:
         logger.info("Database not found. Building database from scratch.")
         controller.buildDatabase(use_cache=False)

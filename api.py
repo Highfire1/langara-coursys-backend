@@ -3,7 +3,7 @@ import os
 import sys
 import logging
 from datetime import datetime
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from fastapi.encoders import jsonable_encoder
 import orjson
@@ -212,6 +212,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 description = "Gets course data from the Langara website. Data refreshes every hour. All data belongs to Langara College or BC Transfer Guide and is summarized here in order to help students. Pull requests welcome!"
 
 tags_metadata = [
+    {"name": "Health", "description": "Check if the API is running."},
     {"name": "Index Methods", "description": "These requests return quickly and can be rendered server side."},
     {"name": "Standard Requests", "description": "These are your standard api requests."},
     {"name": "Search Requests", "description": "These requests will search the server so you don't have to."},
@@ -249,7 +250,7 @@ FAVICON_PATH = "favicon.ico"
 async def favicon():
     return FileResponse(FAVICON_PATH)
 
-def check_year_term_valid_raise_if_not(year: int, term: int, session: Session):
+def check_year_term_valid_raise_if_not(year: int, term: Literal[10, 20, 30], session: Session):
     # Check if term is valid
     if term not in [10, 20, 30]:
         raise HTTPException(status_code=404, detail="Term must be 10 (Spring), 20 (Summer), or 30 (Fall)")
@@ -289,6 +290,11 @@ async def scalar_html():
         title=app.title,
         default_open_all_tags=True,
     )
+
+@app.get("/health", tags=["Health"], summary="Health Check", description="Check if the API is running.")
+async def health_check():
+    return {"status": "ok", "message": "API is running"}
+
 
 @app.get(
     "/v1/index/latest_semester",
@@ -482,7 +488,7 @@ async def semester(
     *,
     session: Session = Depends(get_session),
     year: int, 
-    term: int
+    term: Literal[10, 20, 30]
 ) -> CourseAPILightList:
     # get any course where there is at least one section
     # that is in the current year and term
@@ -519,7 +525,7 @@ async def semester(
     *,
     session: Session = Depends(get_session),
     year: int, 
-    term: int
+    term: Literal[10, 20, 30]
 ) -> SectionAPIList:
     check_year_term_valid_raise_if_not(year, term, session)
     
@@ -577,7 +583,7 @@ async def semesterSectionsInfo(
     *,
     session: Session = Depends(get_session),
     year: int, 
-    term: int, 
+    term: Literal[10, 20, 30], 
     crn: int
 ):
     check_year_term_valid_raise_if_not(year, term, session)
@@ -1106,7 +1112,7 @@ async def search_sections_v2_endpoint(
 #     session: Session = Depends(get_session),
 #     query: str,
 #     year: int,
-#     term: int,
+#     term: Literal[10, 20, 30],
 #     online: Optional[bool] = None
 # ):
 #     # parse query
