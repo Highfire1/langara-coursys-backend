@@ -250,10 +250,11 @@ FAVICON_PATH = "favicon.ico"
 async def favicon():
     return FileResponse(FAVICON_PATH)
 
-def check_year_term_valid_raise_if_not(year: int, term: Literal[10, 20, 30], session: Session):
+def check_year_term_valid_raise_if_not(year: int, term: Literal["10", "20", "30"], session: Session):
     # Check if term is valid
-    if term not in [10, 20, 30]:
-        raise HTTPException(status_code=404, detail="Term must be 10 (Spring), 20 (Summer), or 30 (Fall)")
+    # if term not in [10, 20, 30]:
+    #     raise HTTPException(status_code=404, detail="Term must be 10 (Spring), 20 (Summer), or 30 (Fall)")
+    term_i = int(term)
     
     # Get most recent term from DB
     statement = select(Semester).order_by(col(Semester.year).desc(), col(Semester.term).desc()).limit(1)
@@ -264,8 +265,8 @@ def check_year_term_valid_raise_if_not(year: int, term: Literal[10, 20, 30], ses
         raise HTTPException(status_code=404, detail="No semesters found in database")
         
     latest_yearterm = latest.year * 100 + latest.term
-    check_yearterm = year * 100 + term
-    
+    check_yearterm = year * 100 + term_i
+
     # Check year/term bounds
     if check_yearterm < 199910:
         raise HTTPException(status_code=404, detail=f"No data is available prior to the term of Spring 1999")
@@ -273,11 +274,11 @@ def check_year_term_valid_raise_if_not(year: int, term: Literal[10, 20, 30], ses
         raise HTTPException(status_code=404, detail=f"Semester must be before the current latest semester: {latest_yearterm}")
 
     # Check if term exists in DB
-    statement = select(Semester).where(Semester.year == year, Semester.term == term)
+    statement = select(Semester).where(Semester.year == year, Semester.term == term_i)
     results = session.exec(statement)
     if results.first() is None:
-        raise HTTPException(status_code=404, detail=f"Term {term} {year} not found in database")
-        
+        raise HTTPException(status_code=404, detail=f"Term {term_i} {year} not found in database")
+
     return True
 
 
@@ -488,15 +489,15 @@ async def semester(
     *,
     session: Session = Depends(get_session),
     year: int, 
-    term: Literal[10, 20, 30]
+    term: Literal["10", "20", "30"]
 ) -> CourseAPILightList:
     # get any course where there is at least one section
     # that is in the current year and term
-    
+    term_i = int(term)
     
     statement = (
         select(SectionDB.id_course)
-        .where(SectionDB.year == year, SectionDB.term == term)
+        .where(SectionDB.year == year, SectionDB.term == term_i)
         .distinct()
     )
     result = session.exec(statement)
@@ -525,14 +526,15 @@ async def semester(
     *,
     session: Session = Depends(get_session),
     year: int, 
-    term: Literal[10, 20, 30]
+    term: Literal["10", "20", "30"]
 ) -> SectionAPIList:
     check_year_term_valid_raise_if_not(year, term, session)
+    term_i = int(term)
     
     
     statement = select(SectionDB).where(
             SectionDB.year == year,
-            SectionDB.term == term
+            SectionDB.term == term_i
         )
     
     results = session.exec(statement)
@@ -583,19 +585,20 @@ async def semesterSectionsInfo(
     *,
     session: Session = Depends(get_session),
     year: int, 
-    term: Literal[10, 20, 30], 
+    term: Literal["10", "20", "30"], 
     crn: int
 ):
     check_year_term_valid_raise_if_not(year, term, session)
+    term_i = int(term)
     
-    statement = select(SectionDB).where(SectionDB.year == year, SectionDB.term == term, SectionDB.crn == crn)
+    statement = select(SectionDB).where(SectionDB.year == year, SectionDB.term == term_i, SectionDB.crn == crn)
     results = session.exec(statement)
     section = results.first()
     
     if section == None:
         raise HTTPException(status_code=404, detail="Course not found.")
-    
-    statement = select(ScheduleEntryDB).where(ScheduleEntryDB.year == year, ScheduleEntryDB.term == term, ScheduleEntryDB.crn == crn)
+
+    statement = select(ScheduleEntryDB).where(ScheduleEntryDB.year == year, ScheduleEntryDB.term == term_i, ScheduleEntryDB.crn == crn)
     results = session.exec(statement)
     schedules = results.all()
     
@@ -1112,7 +1115,7 @@ async def search_sections_v2_endpoint(
 #     session: Session = Depends(get_session),
 #     query: str,
 #     year: int,
-#     term: Literal[10, 20, 30],
+#     term: Literal["10", "20", "30"],
 #     online: Optional[bool] = None
 # ):
 #     # parse query
