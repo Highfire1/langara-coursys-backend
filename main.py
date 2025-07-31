@@ -30,7 +30,7 @@ ARCHIVES_DIRECTORY="database/archives/"
 
    
 @repeat(every(60).minutes)
-def hourly():
+def hourly(use_cache: bool = False):
     c = Controller()
     c.updateLatestSemester(False)
     c.setMetadata("last_updated")
