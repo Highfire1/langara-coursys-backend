@@ -760,15 +760,16 @@ async def semesterSectionsInfo(
     session: Session = Depends(get_session),
     query: Optional[str] = None,
     year: Optional[int] = None,
-    term: Optional[int] = None,
+    term: Optional[ Literal["10", "20", "30"]] = None,
     online: Optional[bool] = None
 ) -> SearchSectionList:
     filters = []
+    term_i = int(term)
     
     if year:
         filters.append(SectionDB.year == year)
     if term:
-        filters.append(SectionDB.term == term)
+        filters.append(SectionDB.term == term_i)
     
     search_terms = []
     if query:
@@ -943,7 +944,7 @@ async def search_sections_v2_endpoint(
     title_search: Optional[str] = None,
     instructor_search: Optional[str] = None,
     year: Optional[int] = None,
-    term: Optional[int] = None,
+    term: Optional[Literal["10", "20", "30"]] = None,
     online: Optional[bool] = None,
     attr_ar: Optional[bool] = None,
     attr_sc: Optional[bool] = None,
@@ -958,6 +959,7 @@ async def search_sections_v2_endpoint(
     page: int = 1,
     sections_per_page: int = 100,
 ) -> SectionPage:
+    term_i = int(term) if term else None
     
     """
     General flow for search:
@@ -1025,8 +1027,8 @@ async def search_sections_v2_endpoint(
     
     if year != None:
         filters.append(SectionDB.year == year)
-    if term != None:
-        filters.append(SectionDB.term == term)
+    if term_i != None:
+        filters.append(SectionDB.term == term_i)
     if online != None:
         if online:
             filters.append(SectionDB.section.contains("W"))

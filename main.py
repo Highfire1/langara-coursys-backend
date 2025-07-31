@@ -7,8 +7,6 @@ from dotenv import load_dotenv
 from schedule import every, repeat, run_pending
 
 import logging
-
-import logging
 logger = logging.getLogger("LangaraCourseWatcherScraper") 
 logger.setLevel(logging.INFO)
 
@@ -17,6 +15,7 @@ formatter = logging.Formatter(fmt='[%(asctime)s] : [%(levelname)-8s] : %(message
                                 datefmt='%Y-%m-%d %H:%M:%S')
 screen_handler.setFormatter(formatter)
 logger.addHandler(screen_handler)
+# logger.propagate = False
 
 
 from Controller import Controller
@@ -31,9 +30,9 @@ ARCHIVES_DIRECTORY="database/archives/"
 
    
 @repeat(every(60).minutes)
-def hourly(use_cache: bool = False):
+def hourly():
     c = Controller()
-    c.updateLatestSemester(use_cache)
+    c.updateLatestSemester(False)
     c.setMetadata("last_updated")
 
 
@@ -73,7 +72,7 @@ if __name__ == "__main__":
 
     if db_exists:
         logger.info("Database found.")
-        controller.buildDatabase(use_cache=True)
+        # controller.buildDatabase(use_cache=True)
         hourly(use_cache=False)
     else:
         logger.info("Database not found. Building database from scratch.")
