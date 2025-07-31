@@ -535,7 +535,7 @@ async def semester(
     statement = select(SectionDB).where(
             SectionDB.year == year,
             SectionDB.term == term_i
-        )
+        ).order_by(col(SectionDB.subject).asc(), col(SectionDB.course_code).asc(), col(SectionDB.section).asc())
     
     results = session.exec(statement)
     sections = results.all()
@@ -813,9 +813,10 @@ async def semesterSectionsInfo(
     statement = (
         select(SectionDB)
         .join(SectionDB.schedule)  # Join using the relationship name
-        .options(selectinload(SectionDB.schedule))
         .where(*filters)
+        .order_by(col(SectionDB.subject).asc(), col(SectionDB.course_code).asc(), col(SectionDB.section).asc())
         .distinct()
+        .options(selectinload(SectionDB.schedule))
     )
     results = session.exec(statement)
     sections = results.all()
@@ -1067,6 +1068,7 @@ async def search_sections_v2_endpoint(
     .join(SectionDB.schedule)  # Join with schedule table
     .where(*filters)  # Filters applied to SectionDB and Schedule
     .distinct()
+    .order_by(col(SectionDB.subject).asc(), col(SectionDB.course_code).asc(), col(SectionDB.section).asc())
     .options(selectinload(SectionDB.schedule))  # Eagerly load the schedule relationship
     )
 
