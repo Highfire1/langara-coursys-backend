@@ -250,6 +250,13 @@ FAVICON_PATH = "favicon.ico"
 async def favicon():
     return FileResponse(FAVICON_PATH)
 
+@app.get('/robots.txt', include_in_schema=False)
+async def robots_txt():
+    robots_content = """User-agent: *
+Allow: /$
+Disallow: /"""
+    return Response(content=robots_content, media_type="text/plain")
+
 def check_year_term_valid_raise_if_not(year: int, term: Literal["10", "20", "30"], session: Session):
     # Check if term is valid
     # if term not in [10, 20, 30]:
