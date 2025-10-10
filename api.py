@@ -64,6 +64,15 @@ import schedule
 import time
 import threading
 
+# simple lock and mtime tracking for safe reloads
+_db_reload_lock = threading.Lock()
+_last_db_mtime: float | None = None
+
+# interval for file watcher (seconds)
+WATCHER_INTERVAL_SECONDS = int(os.getenv("DB_WATCH_INTERVAL", "60"))
+# optional secret for secure refresh calls from backend
+REFRESH_SECRET = os.getenv("API_REFRESH_SECRET", "")
+
 DB_LOCATION="database/database.db"
 ARCHIVES_DIRECTORY="database/archives/"
 
@@ -142,7 +151,8 @@ def get_session():
 
 # === We must refresh the in memory db or it will get out of sync ===
 def refresh_db():
-    with get_session() as session:
+    # Use a lock to avoid concurrent reloads (scheduler, watcher, manual)
+    with _db_reload_lock:
         fetchDB()
 
 def run_scheduler():
@@ -154,6 +164,44 @@ def run_scheduler():
 # Start scheduler in background thread
 scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
 scheduler_thread.start()
+
+# Background watcher thread: polls the on-disk DB mtime and reloads in-memory DB when it changes.
+def _db_file_watcher():
+    global _last_db_mtime
+    try:
+        if os.path.exists(DB_LOCATION):
+            try:
+                _last_db_mtime = os.path.getmtime(DB_LOCATION)
+            except Exception:
+                _last_db_mtime = None
+        else:
+            _last_db_mtime = None
+
+        while True:
+            try:
+                if os.path.exists(DB_LOCATION):
+                    mtime = os.path.getmtime(DB_LOCATION)
+                    if _last_db_mtime is None:
+                        _last_db_mtime = mtime
+                    elif mtime > _last_db_mtime:
+                        logger.info("Detected database file change (mtime changed). Reloading in-memory DB...")
+                        with _db_reload_lock:
+                            try:
+                                fetchDB()
+                                _last_db_mtime = mtime
+                            except Exception:
+                                logger.exception("Failed to reload DB after detected change")
+                time.sleep(WATCHER_INTERVAL_SECONDS)
+            except Exception:
+                logger.exception("Error in DB watcher loop")
+                time.sleep(WATCHER_INTERVAL_SECONDS)
+    except Exception:
+        logger.exception("DB watcher failed to start")
+
+
+# Start file watcher in background
+watcher_thread = threading.Thread(target=_db_file_watcher, daemon=True)
+watcher_thread.start()
             
 # === MISC. ===
 
