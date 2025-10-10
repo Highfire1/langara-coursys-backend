@@ -152,8 +152,10 @@ def get_session():
 # === We must refresh the in memory db or it will get out of sync ===
 def refresh_db():
     # Use a lock to avoid concurrent reloads (scheduler, watcher, manual)
-    with _db_reload_lock:
-        fetchDB()
+    # NOTE: This is intentionally a no-op now - the watcher handles reloads
+    # and calling fetchDB() while sessions are active causes "detached connection fairy" errors
+    logger.info("refresh_db called (deprecated - watcher handles reloads)")
+    pass
 
 def run_scheduler():
     schedule.every(30).minutes.do(refresh_db)
@@ -167,7 +169,7 @@ scheduler_thread.start()
 
 # Background watcher thread: polls the on-disk DB mtime and reloads in-memory DB when it changes.
 def _db_file_watcher():
-    global _last_db_mtime
+    global _last_db_mtime, engine, engine_initialized
     try:
         if os.path.exists(DB_LOCATION):
             try:
@@ -187,8 +189,39 @@ def _db_file_watcher():
                         logger.info("Detected database file change (mtime changed). Reloading in-memory DB...")
                         with _db_reload_lock:
                             try:
-                                fetchDB()
+                                # Create new engine in background
+                                if CACHE_DB_TO_MEMORY:
+                                    engine_source = create_engine(sql_address, connect_args=connect_args)
+                                    engine_memory = create_engine('sqlite://', connect_args=connect_args)
+                                    raw_connection_memory = engine_memory.raw_connection()
+                                    raw_connection_source = engine_source.raw_connection()
+                                    raw_connection_source.backup(raw_connection_memory.connection)
+                                    raw_connection_source.close()
+                                    new_engine = engine_memory
+                                    
+                                    journal_options = (
+                                        "PRAGMA synchronous = OFF;",
+                                        "pragma cache_size = 100000",
+                                    )
+                                else:
+                                    new_engine = create_engine(sql_address, connect_args=connect_args)
+                                    journal_options = (
+                                        "pragma vacuum;",
+                                        "pragma optimize"
+                                    )
+                                
+                                with Session(new_engine) as session:
+                                    for pragma in journal_options:
+                                        session.exec(text(pragma))
+                                
+                                # Dispose old engine and swap atomically
+                                old_engine = engine
+                                engine = new_engine
+                                engine_initialized = True
+                                old_engine.dispose()
+                                
                                 _last_db_mtime = mtime
+                                logger.info("In-memory DB reloaded successfully")
                             except Exception:
                                 logger.exception("Failed to reload DB after detected change")
                 time.sleep(WATCHER_INTERVAL_SECONDS)
@@ -1320,7 +1353,6 @@ async def get_metadata(
     
     return MetadataFormatted(data=metadata_dict)
 
-# TODO: implement password protection for this route.
 @app.get(
     "/v1/admin/refreshInternals",
     summary="Refreshes the internals",
@@ -1329,10 +1361,64 @@ async def get_metadata(
 )
 async def refreshInternals(
     *,
+    request: Request,
     session: Session = Depends(get_session),
-):  
-    fetchDB()
-    await FastAPICache.clear()
+):
+    # Check secret if configured
+    if REFRESH_SECRET:
+        provided_secret = request.headers.get("X-Refresh-Secret", "")
+        if provided_secret != REFRESH_SECRET:
+            raise HTTPException(status_code=401, detail="Invalid or missing refresh secret")
+    
+    global engine, engine_initialized
+    
+    logger.info("Manual refresh triggered via /v1/admin/refreshInternals")
+    
+    with _db_reload_lock:
+        try:
+            # Create new engine in background
+            if CACHE_DB_TO_MEMORY:
+                engine_source = create_engine(sql_address, connect_args=connect_args)
+                engine_memory = create_engine('sqlite://', connect_args=connect_args)
+                raw_connection_memory = engine_memory.raw_connection()
+                raw_connection_source = engine_source.raw_connection()
+                raw_connection_source.backup(raw_connection_memory.connection)
+                raw_connection_source.close()
+                new_engine = engine_memory
+                
+                journal_options = (
+                    "PRAGMA synchronous = OFF;",
+                    "pragma cache_size = 100000",
+                )
+            else:
+                new_engine = create_engine(sql_address, connect_args=connect_args)
+                journal_options = (
+                    "pragma vacuum;",
+                    "pragma optimize"
+                )
+            
+            with Session(new_engine) as temp_session:
+                for pragma in journal_options:
+                    temp_session.exec(text(pragma))
+            
+            # Dispose old engine and swap atomically
+            old_engine = engine
+            engine = new_engine
+            engine_initialized = True
+            old_engine.dispose()
+            
+            # Update mtime tracker
+            global _last_db_mtime
+            if os.path.exists(DB_LOCATION):
+                _last_db_mtime = os.path.getmtime(DB_LOCATION)
+            
+            await FastAPICache.clear()
+            
+            logger.info("Manual refresh completed successfully")
+            return {"status": "ok", "message": "Database reloaded and cache cleared"}
+        except Exception as e:
+            logger.exception("Failed to reload database during manual refresh")
+            raise HTTPException(status_code=500, detail=f"Failed to reload database: {str(e)}")
 
 
 @app.get("/v1/admin/check_cache", include_in_schema=False)
