@@ -247,7 +247,7 @@ class Controller():
         
         warehouse = Controller.SemesterInternal(year=year, term=term)
         
-        termHTML = fetchTermFromWeb(year, term, use_cache=use_cache)
+        termHTML = fetchTermFromWeb(year, term, use_cache=False)
         if termHTML == None:
             logger.info(f"No content found for {year}{term}.")
             return None
