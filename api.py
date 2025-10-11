@@ -64,15 +64,6 @@ import schedule
 import time
 import threading
 
-# simple lock and mtime tracking for safe reloads
-_db_reload_lock = threading.Lock()
-_last_db_mtime: float | None = None
-
-# interval for file watcher (seconds)
-WATCHER_INTERVAL_SECONDS = int(os.getenv("DB_WATCH_INTERVAL", "60"))
-# optional secret for secure refresh calls from backend
-REFRESH_SECRET = os.getenv("API_REFRESH_SECRET", "")
-
 DB_LOCATION="database/database.db"
 ARCHIVES_DIRECTORY="database/archives/"
 
@@ -151,11 +142,8 @@ def get_session():
 
 # === We must refresh the in memory db or it will get out of sync ===
 def refresh_db():
-    # Use a lock to avoid concurrent reloads (scheduler, watcher, manual)
-    # NOTE: This is intentionally a no-op now - the watcher handles reloads
-    # and calling fetchDB() while sessions are active causes "detached connection fairy" errors
-    logger.info("refresh_db called (deprecated - watcher handles reloads)")
-    pass
+    with get_session() as session:
+        fetchDB()
 
 def run_scheduler():
     schedule.every(30).minutes.do(refresh_db)
@@ -166,75 +154,6 @@ def run_scheduler():
 # Start scheduler in background thread
 scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
 scheduler_thread.start()
-
-# Background watcher thread: polls the on-disk DB mtime and reloads in-memory DB when it changes.
-def _db_file_watcher():
-    global _last_db_mtime, engine, engine_initialized
-    try:
-        if os.path.exists(DB_LOCATION):
-            try:
-                _last_db_mtime = os.path.getmtime(DB_LOCATION)
-            except Exception:
-                _last_db_mtime = None
-        else:
-            _last_db_mtime = None
-
-        while True:
-            try:
-                if os.path.exists(DB_LOCATION):
-                    mtime = os.path.getmtime(DB_LOCATION)
-                    if _last_db_mtime is None:
-                        _last_db_mtime = mtime
-                    elif mtime > _last_db_mtime:
-                        logger.info("Detected database file change (mtime changed). Reloading in-memory DB...")
-                        with _db_reload_lock:
-                            try:
-                                # Create new engine in background
-                                if CACHE_DB_TO_MEMORY:
-                                    engine_source = create_engine(sql_address, connect_args=connect_args)
-                                    engine_memory = create_engine('sqlite://', connect_args=connect_args)
-                                    raw_connection_memory = engine_memory.raw_connection()
-                                    raw_connection_source = engine_source.raw_connection()
-                                    raw_connection_source.backup(raw_connection_memory.connection)
-                                    raw_connection_source.close()
-                                    new_engine = engine_memory
-                                    
-                                    journal_options = (
-                                        "PRAGMA synchronous = OFF;",
-                                        "pragma cache_size = 100000",
-                                    )
-                                else:
-                                    new_engine = create_engine(sql_address, connect_args=connect_args)
-                                    journal_options = (
-                                        "pragma vacuum;",
-                                        "pragma optimize"
-                                    )
-                                
-                                with Session(new_engine) as session:
-                                    for pragma in journal_options:
-                                        session.exec(text(pragma))
-                                
-                                # Dispose old engine and swap atomically
-                                old_engine = engine
-                                engine = new_engine
-                                engine_initialized = True
-                                old_engine.dispose()
-                                
-                                _last_db_mtime = mtime
-                                logger.info("In-memory DB reloaded successfully")
-                            except Exception:
-                                logger.exception("Failed to reload DB after detected change")
-                time.sleep(WATCHER_INTERVAL_SECONDS)
-            except Exception:
-                logger.exception("Error in DB watcher loop")
-                time.sleep(WATCHER_INTERVAL_SECONDS)
-    except Exception:
-        logger.exception("DB watcher failed to start")
-
-
-# Start file watcher in background
-watcher_thread = threading.Thread(target=_db_file_watcher, daemon=True)
-watcher_thread.start()
             
 # === MISC. ===
 
@@ -1353,6 +1272,7 @@ async def get_metadata(
     
     return MetadataFormatted(data=metadata_dict)
 
+# TODO: implement password protection for this route.
 @app.get(
     "/v1/admin/refreshInternals",
     summary="Refreshes the internals",
@@ -1361,64 +1281,10 @@ async def get_metadata(
 )
 async def refreshInternals(
     *,
-    request: Request,
     session: Session = Depends(get_session),
-):
-    # Check secret if configured
-    if REFRESH_SECRET:
-        provided_secret = request.headers.get("X-Refresh-Secret", "")
-        if provided_secret != REFRESH_SECRET:
-            raise HTTPException(status_code=401, detail="Invalid or missing refresh secret")
-    
-    global engine, engine_initialized
-    
-    logger.info("Manual refresh triggered via /v1/admin/refreshInternals")
-    
-    with _db_reload_lock:
-        try:
-            # Create new engine in background
-            if CACHE_DB_TO_MEMORY:
-                engine_source = create_engine(sql_address, connect_args=connect_args)
-                engine_memory = create_engine('sqlite://', connect_args=connect_args)
-                raw_connection_memory = engine_memory.raw_connection()
-                raw_connection_source = engine_source.raw_connection()
-                raw_connection_source.backup(raw_connection_memory.connection)
-                raw_connection_source.close()
-                new_engine = engine_memory
-                
-                journal_options = (
-                    "PRAGMA synchronous = OFF;",
-                    "pragma cache_size = 100000",
-                )
-            else:
-                new_engine = create_engine(sql_address, connect_args=connect_args)
-                journal_options = (
-                    "pragma vacuum;",
-                    "pragma optimize"
-                )
-            
-            with Session(new_engine) as temp_session:
-                for pragma in journal_options:
-                    temp_session.exec(text(pragma))
-            
-            # Dispose old engine and swap atomically
-            old_engine = engine
-            engine = new_engine
-            engine_initialized = True
-            old_engine.dispose()
-            
-            # Update mtime tracker
-            global _last_db_mtime
-            if os.path.exists(DB_LOCATION):
-                _last_db_mtime = os.path.getmtime(DB_LOCATION)
-            
-            await FastAPICache.clear()
-            
-            logger.info("Manual refresh completed successfully")
-            return {"status": "ok", "message": "Database reloaded and cache cleared"}
-        except Exception as e:
-            logger.exception("Failed to reload database during manual refresh")
-            raise HTTPException(status_code=500, detail=f"Failed to reload database: {str(e)}")
+):  
+    fetchDB()
+    await FastAPICache.clear()
 
 
 @app.get("/v1/admin/check_cache", include_in_schema=False)
