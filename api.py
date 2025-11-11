@@ -1285,8 +1285,11 @@ async def refreshInternals(
     *,
     session: Session = Depends(get_session),
 ):  
-    fetchDB()
+    global engine
+    logger.info("Manual refresh triggered via /v1/admin/refreshInternals")
+    engine = fetchDB()
     await FastAPICache.clear()
+    logger.info("Manual refresh completed and cache cleared.")
 
 
 @app.get("/v1/admin/check_cache", include_in_schema=False)
