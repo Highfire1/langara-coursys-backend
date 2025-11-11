@@ -63,6 +63,7 @@ from scalar_fastapi import get_scalar_api_reference
 import schedule
 import time
 import threading
+from threading import RLock
 
 DB_LOCATION="database/database.db"
 ARCHIVES_DIRECTORY="database/archives/"
@@ -82,70 +83,87 @@ connect_args = {"check_same_thread": False}
 engine: Engine = None
 engine_initialized = False
 
+# Thread-safe lock for engine operations
+engine_lock = RLock()
+
 def fetchDB():
     global engine
     global engine_initialized
     
-    # prevent memory leak of old in-memory database
-    if engine_initialized:
-        engine.dispose()
+    with engine_lock:
+        # Store old engine to dispose after new one is ready
+        old_engine = engine if engine_initialized else None
         
-    if CACHE_DB_TO_MEMORY:
-        # file system database
-        engine_source = create_engine(sql_address, connect_args=connect_args)
+        if CACHE_DB_TO_MEMORY:
+            # file system database
+            engine_source = create_engine(sql_address, connect_args=connect_args)
 
-        # in memory database
-        engine_memory = create_engine('sqlite://', connect_args=connect_args)
+            # in memory database
+            engine_memory = create_engine('sqlite://', connect_args=connect_args)
 
-        raw_connection_memory = engine_memory.raw_connection()
-        raw_connection_source = engine_source.raw_connection()
+            raw_connection_memory = engine_memory.raw_connection()
+            raw_connection_source = engine_source.raw_connection()
 
-        raw_connection_source.backup(raw_connection_memory.connection)
-        raw_connection_source.close()
+            raw_connection_source.backup(raw_connection_memory.connection)
+            raw_connection_source.close()
+            
+            engine = engine_memory
+            
+            journal_options = (
+                "PRAGMA synchronous = OFF;",
+                "pragma cache_size = 100000",
+            )
+            
+        else:
+            engine = create_engine(sql_address, connect_args=connect_args)
+            
+            journal_options = (
+                # "pragma synchronous = normal;",
+                # "pragma journal_size_limit = 6144000;",
+                # "pragma mmap_size = 30000000000;",
+                # "pragma page_size = 32768;",
+                # "pragma cache_size = 100000",
+                "pragma vacuum;",
+                "pragma optimize"
+                # "pragma temp_store = memory;",
+            )
         
-        engine = engine_memory
+        # SQLModel.metadata.create_all(engine)
+            
+        with Session(engine) as session:
+            for pragma in journal_options:
+                session.exec(text(pragma))
         
-        journal_options = (
-            "PRAGMA synchronous = OFF;",
-            "pragma cache_size = 100000",
-        )
+        engine_initialized = True
         
-    else:
-        engine = create_engine(sql_address, connect_args=connect_args)
+        # Dispose old engine after new one is ready and configured
+        if old_engine is not None:
+            try:
+                old_engine.dispose()
+            except Exception as e:
+                logger.warning(f"Error disposing old engine: {e}")
         
-        journal_options = (
-            # "pragma synchronous = normal;",
-            # "pragma journal_size_limit = 6144000;",
-            # "pragma mmap_size = 30000000000;",
-            # "pragma page_size = 32768;",
-            # "pragma cache_size = 100000",
-            "pragma vacuum;",
-            "pragma optimize"
-            # "pragma temp_store = memory;",
-        )
-    
-    # SQLModel.metadata.create_all(engine)
-        
-    with Session(engine) as session:
-        for pragma in journal_options:
-            session.exec(text(pragma))
-    
-    engine_initialized = True
-    return engine
+        return engine
 
 engine = fetchDB()
 
 def get_session():
-    with Session(engine) as session:
+    with engine_lock:
+        # Get current engine under lock to ensure consistency
+        current_engine = engine
+    with Session(current_engine) as session:
         yield session
 
 
 # === We must refresh the in memory db or it will get out of sync ===
 def refresh_db():
     global engine
-    logger.info("Refreshing in-memory database from disk...")
-    engine = fetchDB()
-    logger.info("In-memory database refreshed successfully.")
+    try:
+        logger.info("Refreshing in-memory database from disk...")
+        engine = fetchDB()
+        logger.info("In-memory database refreshed successfully.")
+    except Exception as e:
+        logger.error(f"Error refreshing in-memory database: {e}", exc_info=True)
 
 def run_scheduler():
     schedule.every(30).minutes.do(refresh_db)
@@ -1286,10 +1304,15 @@ async def refreshInternals(
     session: Session = Depends(get_session),
 ):  
     global engine
-    logger.info("Manual refresh triggered via /v1/admin/refreshInternals")
-    engine = fetchDB()
-    await FastAPICache.clear()
-    logger.info("Manual refresh completed and cache cleared.")
+    try:
+        logger.info("Manual refresh triggered via /v1/admin/refreshInternals")
+        engine = fetchDB()
+        await FastAPICache.clear()
+        logger.info("Manual refresh completed and cache cleared.")
+        return {"status": "success", "message": "Database refreshed and cache cleared"}
+    except Exception as e:
+        logger.error(f"Error during manual refresh: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Refresh failed: {str(e)}")
 
 
 @app.get("/v1/admin/check_cache", include_in_schema=False)
@@ -1298,4 +1321,9 @@ async def check_cache():
 
 @app.get("/v1/admin/clear_cache", include_in_schema=False)
 async def clear_cache():
-    FastAPICache.clear()
+    try:
+        await FastAPICache.clear()
+        return {"status": "success", "message": "Cache cleared"}
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Cache clear failed: {str(e)}")
