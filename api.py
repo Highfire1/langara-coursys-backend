@@ -1307,7 +1307,8 @@ async def refreshInternals(
     global engine
     try:
         logger.info("Manual refresh triggered via /v1/admin/refreshInternals")
-        engine = fetchDB()
+        with engine_lock:
+            engine = fetchDB()
         await FastAPICache.clear()
         logger.info("Manual refresh completed and cache cleared.")
         return {"status": "success", "message": "Database refreshed and cache cleared"}
