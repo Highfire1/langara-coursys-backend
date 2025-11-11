@@ -160,7 +160,8 @@ def refresh_db():
     global engine
     try:
         logger.info("Refreshing in-memory database from disk...")
-        engine = fetchDB()
+        with engine_lock:
+            engine = fetchDB()
         logger.info("In-memory database refreshed successfully.")
     except Exception as e:
         logger.error(f"Error refreshing in-memory database: {e}", exc_info=True)
