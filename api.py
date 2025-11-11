@@ -142,8 +142,10 @@ def get_session():
 
 # === We must refresh the in memory db or it will get out of sync ===
 def refresh_db():
-    with get_session() as session:
-        fetchDB()
+    global engine
+    logger.info("Refreshing in-memory database from disk...")
+    engine = fetchDB()
+    logger.info("In-memory database refreshed successfully.")
 
 def run_scheduler():
     schedule.every(30).minutes.do(refresh_db)
