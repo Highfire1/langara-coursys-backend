@@ -157,14 +157,18 @@ def get_session():
 
 # === We must refresh the in memory db or it will get out of sync ===
 def refresh_db():
-    global engine
-    try:
-        logger.info("Refreshing in-memory database from disk...")
-        with engine_lock:
-            engine = fetchDB()
-        logger.info("In-memory database refreshed successfully.")
-    except Exception as e:
-        logger.error(f"Error refreshing in-memory database: {e}", exc_info=True)
+    # temporary workaround because it's erroring and I don't have access to my computer to figure out why
+    # docker policy on the container is to restart on exit so this should work
+    import sys
+    sys.exit()
+    # global engine
+    # try:
+    #     logger.info("Refreshing in-memory database from disk...")
+    #     with engine_lock:
+    #         engine = fetchDB()
+    #     logger.info("In-memory database refreshed successfully.")
+    # except Exception as e:
+    #     logger.error(f"Error refreshing in-memory database: {e}", exc_info=True)
 
 def run_scheduler():
     schedule.every(30).minutes.do(refresh_db)
