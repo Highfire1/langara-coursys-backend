@@ -32,6 +32,7 @@ from fastapi.responses import FileResponse
 from sqlmodel import SQLModel, Session, col, create_engine, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy import Engine, Integer, and_, cast, exists, func, or_, text
+from sqlalchemy.pool import NullPool, StaticPool
 
 # caching stuff
 from contextlib import asynccontextmanager
@@ -91,15 +92,20 @@ def fetchDB():
     global engine_initialized
     
     with engine_lock:
-        # Store old engine to dispose after new one is ready
-        old_engine = engine if engine_initialized else None
-        
         if CACHE_DB_TO_MEMORY:
             # file system database
-            engine_source = create_engine(sql_address, connect_args=connect_args)
+            engine_source = create_engine(
+                sql_address, 
+                connect_args=connect_args,
+                pool_pre_ping=True
+            )
 
-            # in memory database
-            engine_memory = create_engine('sqlite://', connect_args=connect_args)
+            # in memory database - use StaticPool to share connection across threads
+            engine_memory = create_engine(
+                'sqlite://', 
+                connect_args=connect_args,
+                poolclass=StaticPool
+            )
 
             raw_connection_memory = engine_memory.raw_connection()
             raw_connection_source = engine_source.raw_connection()
@@ -107,7 +113,7 @@ def fetchDB():
             raw_connection_source.backup(raw_connection_memory.connection)
             raw_connection_source.close()
             
-            engine = engine_memory
+            new_engine = engine_memory
             
             journal_options = (
                 "PRAGMA synchronous = OFF;",
@@ -115,7 +121,12 @@ def fetchDB():
             )
             
         else:
-            engine = create_engine(sql_address, connect_args=connect_args)
+            new_engine = create_engine(
+                sql_address, 
+                connect_args=connect_args,
+                pool_pre_ping=True,
+                pool_recycle=1800  # Recycle connections after 30 minutes
+            )
             
             journal_options = (
                 # "pragma synchronous = normal;",
@@ -128,22 +139,15 @@ def fetchDB():
                 # "pragma temp_store = memory;",
             )
         
-        # SQLModel.metadata.create_all(engine)
+        # SQLModel.metadata.create_all(new_engine)
             
-        with Session(engine) as session:
+        with Session(new_engine) as session:
             for pragma in journal_options:
                 session.exec(text(pragma))
         
         engine_initialized = True
         
-        # Dispose old engine after new one is ready and configured
-        if old_engine is not None:
-            try:
-                old_engine.dispose()
-            except Exception as e:
-                logger.warning(f"Error disposing old engine: {e}")
-        
-        return engine
+        return new_engine
 
 engine = fetchDB()
 
@@ -161,7 +165,24 @@ def refresh_db():
     try:
         logger.info("Refreshing in-memory database from disk...")
         with engine_lock:
+            old_engine = engine
             engine = fetchDB()
+        
+        # Delay disposal of old engine to allow active sessions to complete
+        # This prevents "detached connection fairy" errors
+        def dispose_old_engine():
+            try:
+                # Wait for active sessions to complete (10 seconds should be enough)
+                time.sleep(10)
+                old_engine.dispose()
+                logger.info("Old engine disposed successfully after grace period.")
+            except Exception as e:
+                logger.warning(f"Error disposing old engine: {e}")
+        
+        # Dispose old engine in a background thread to not block the refresh
+        disposal_thread = threading.Thread(target=dispose_old_engine, daemon=True)
+        disposal_thread.start()
+        
         logger.info("In-memory database refreshed successfully.")
     except Exception as e:
         logger.error(f"Error refreshing in-memory database: {e}", exc_info=True)
