@@ -154,12 +154,12 @@ def get_session():
     with Session(current_engine) as session:
         yield session
 
-crash = false
+crash = False
 
 # === We must refresh the in memory db or it will get out of sync ===
 def refresh_db():
     global crash
-    crash = true
+    crash = True
     # temporary workaround because it's erroring and I don't have access to my computer to figure out why
     # docker policy on the container is to restart on exit so this should work
     # global engine
