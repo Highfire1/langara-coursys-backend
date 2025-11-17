@@ -6,6 +6,8 @@ on:
       - 'main'
   release:
     types: [created]
+  schedule:
+    - cron: "0 0 * * *"   # Run every 24 hours (daily at 00:00 UTC)
 
 jobs:
   build:
