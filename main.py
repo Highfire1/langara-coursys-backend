@@ -77,13 +77,15 @@ if __name__ == "__main__":
     if db_exists:
         logger.info("Database found.")
         # controller.buildDatabase(use_cache=True)
-        hourly(use_cache=False)
     else:
         logger.info("Database not found. Building database from scratch.")
         controller.buildDatabase(use_cache=False)
         controller.setMetadata("last_updated")
 
     logger.info("Initialization complete.")
+    
+    daily(use_cache=False)
+    hourly(use_cache=False)
 
     while True:
         run_pending()
