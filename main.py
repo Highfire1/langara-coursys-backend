@@ -41,7 +41,11 @@ def daily(use_cache: bool = False):
     c = Controller()
     
     # check for next semester
-    c.checkIfNextSemesterExistsAndUpdate()
+    s = c.checkIfNextSemesterExistsAndUpdate()
+    if s:
+        logger.info(f"New semester detected.")
+    else:
+        logger.info("No new semester detected.")
     
     c.buildDatabase(use_cache)
     c.setMetadata("last_updated")
