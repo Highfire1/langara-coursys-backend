@@ -70,7 +70,7 @@ class TransferSubject(SQLModel):
 
 def getSubjectList(session: Session | CachedSession, use_cache:bool, institution_id:int=15) -> list[TransferSubject]:
     
-    subjects_route = f"https://ws.bctransferguide.ca/api/custom/ui/v1.7/agreementws/GetSubjects?institutionID={institution_id}&sending=true"
+    subjects_route = f"https://ws.bctransferguide.ca/api/agreementws/GetSubjects?institutionID={institution_id}&sending=true"
     response = session.get(subjects_route, headers=headers)
     result = response.json()
     
@@ -164,8 +164,8 @@ def parsePageRequest(data:dict, current_subject=None, current_course_code=None, 
                 
         for t in c["agreements"]:
             
-            subject = t["SndrSubjectCode"]
-            course_code = t["SndrCourseNumber"]
+            subject = t["sndrSubjectCode"]
+            course_code = t["sndrCourseNumber"]
             
             if subject != r.current_subject or course_code != r.current_course_code:
                 r.current_subject = subject
@@ -176,23 +176,23 @@ def parsePageRequest(data:dict, current_subject=None, current_course_code=None, 
             transfer = TransferDB(
                 
                 # TRAN-ENGL-1123-UBCV-309967
-                id = f'TRAN-{subject}-{course_code}-{t["Id"]}',
+                id = f'TRAN-{subject}-{course_code}-{t["id"]}',
                 
-                transfer_guide_id=t["Id"],
+                transfer_guide_id=t["id"],
                 
-                source_credits = t["SndrCourseCredit"],
-                source_title = t["SndrCourseTitle"],
+                source_credits = t["sndrCourseCredit"],
+                source_title = t["sndrCourseTitle"],
                 
-                source= t["SndrInstitutionCode"],
-                # source_name = t["SndrInstitutionName"],
-                destination = t["RcvrInstitutionCode"],
-                destination_name = t["RcvrInstitutionName"],
+                source= t["sndrInstitutionCode"],
+                # source_name = t["sndrInstitutionName"],
+                destination = t["rcvrInstitutionCode"],
+                destination_name = t["rcvrInstitutionName"],
                 
-                credit = t["Detail"],
-                condition = t["Condition"],
+                credit = t["detail"],
+                condition = t["condition"],
                 
-                effective_start= t["StartDate"],
-                effective_end = t["EndDate"],
+                effective_start= t["startDate"],
+                effective_end = t["endDate"],
                 
                 subject = subject,
                 course_code = course_code,
